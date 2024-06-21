@@ -19,9 +19,9 @@ def get_subfolders(folder):
     return [os.path.join(folder, p) for p in os.listdir(folder) if os.path.isdir(os.path.join(folder, p))]
 
 
-def split_video_by_hour(video: str, exact=False, delete=False):
+def split_video_into_batches(video: str, exact=False, delete=False, video_split_length=3600):
     """
-    Splits video into 1 hour batches
+    Splits video into batches of specified length
 
     Args:
         video: str
@@ -30,6 +30,11 @@ def split_video_by_hour(video: str, exact=False, delete=False):
             set True if videos are longer than an hour
         exact: bool
             set True if you want the chunks to be exactly 1 hour long. Set to False for faster but less exact chunks
+        delete: bool
+            whether or not to delete the original video
+        video_split_length: int(seconds)
+            length to split the video into 
+            default: 3600 seconds (one hour)
     """
     batches = os.path.join(os.path.dirname(video), 'batches')
     if not os.path.exists(batches):
@@ -40,7 +45,7 @@ def split_video_by_hour(video: str, exact=False, delete=False):
         return batches
 
     vcodec = 'copy' if not exact else 'h264'
-    ffmpeg_split.split_by_seconds(video, 3600, vcodec=vcodec)
+    ffmpeg_split.split_by_seconds(video, video_split_length, vcodec=vcodec)
     print("Video split into batches.")
     if delete:
         print("Deleting old video.")
@@ -91,17 +96,16 @@ def generate_random_clips(videos=None, clip_length=10, n=10):
             temp_dir = Path(temp_dir).parent  # move to uproot
 
 
-def analyze_video(config_path, video_path, debug=False, save_as_csv=False, gputouse=0):
+def analyze_video(config_path, video_path, debug=False, save_as_csv=False, gputouse=0, shuffle=1, n_fish=10):
     video_path = str(video_path)
-    dlc.analyze_videos(config_path, [video_path], allow_growth=True, auto_track=False, robust_nframes=True, shuffle=4,
+    dlc.analyze_videos(config_path, [video_path], allow_growth=True, auto_track=False, robust_nframes=True, shuffle=shuffle,
                        save_as_csv=save_as_csv, gputouse=gputouse)
-    dlc.convert_detections2tracklets(config_path, [video_path], track_method='ellipse', shuffle=4)
-    n_fish = 10
+    dlc.convert_detections2tracklets(config_path, [video_path], track_method='ellipse', shuffle=shuffle)
     while n_fish > 0:
         try:
             if debug:
                 print(f'Attempting stitching with n_tracks={n_fish}')
-            dlc.stitch_tracklets(config_path, [video_path], n_tracks=n_fish, shuffle=4, save_as_csv=True)
+            dlc.stitch_tracklets(config_path, [video_path], n_tracks=n_fish, shuffle=shuffle, save_as_csv=True)
             break
         except (ValueError, IOError) as e:
             if debug:
@@ -110,10 +114,10 @@ def analyze_video(config_path, video_path, debug=False, save_as_csv=False, gputo
             n_fish -= 1
     if n_fish == 0:
         print('Stitching failed.')
-        dlc.create_video_with_all_detections(config_path, [video_path], shuffle=4)
+        dlc.create_video_with_all_detections(config_path, [video_path], shuffle=shuffle)
         return 0
     fix_individual_names(video_path)
-    dlc.filterpredictions(config_path, video_path, shuffle=4)
+    dlc.filterpredictions(config_path, video_path, shuffle=shuffle)
     print(f'Analyzed {Path(video_path).name} successfully.')
     return n_fish
 
@@ -136,25 +140,28 @@ def fix_individual_names(video_path):
 
 
 def analyse_videos(config_path, videos: typing.List[typing.AnyStr], shuffle=1, plot_trajectories=False,
-                   create_labeled_video=False, debug=False, save_as_csv=False):
+                   create_labeled_video=False, debug=False, save_as_csv=False, gpu_to_use=0, n_fish=10,
+                   strong_gpu_mem_threshold=7000000000, processable_video_length_seconds=3600):
     from tensorflow.python.client import device_lib
 
     strong_gpu = False
-    gpu_to_use = 0
+    gpu_to_use = gpu_to_use
 
     gpus = [i for i in device_lib.list_local_devices() if i.device_type == 'GPU']
     if len(gpus) == 0:
         print("No gpus found. Using cpu...")
     else:
         for i, gpu in enumerate(gpus):
-            if gpu.memory_limit > 7000000000:
+            if gpu.memory_limit > strong_gpu_mem_threshold:
                 strong_gpu = True
                 gpu_to_use = i
                 break
+        if strong_gpu:
+            print(f"strong gpu found, using GPU{gpu_to_use}")
 
     for vid in videos:
-        if strong_gpu or (not os.path.isdir(vid) and ffmpeg_split.get_video_length(vid) <= 3600):
-            n_fish = analyze_video(config_path, vid, debug, save_as_csv=save_as_csv, gputouse=gpu_to_use)
+        if strong_gpu or (not os.path.isdir(vid) and ffmpeg_split.get_video_length(vid) <= processable_video_length_seconds):
+            n_fish = analyze_video(config_path, vid, debug, save_as_csv=save_as_csv, gputouse=gpu_to_use, shuffle=shuffle, n_fish=10)
             kill_and_reset()
             displayedindividuals = [f'fish{i}' for i in range(1, n_fish + 1)]
             if plot_trajectories:
@@ -174,7 +181,7 @@ def analyse_videos(config_path, videos: typing.List[typing.AnyStr], shuffle=1, p
         else:
             vid_name = Path(vid).name
             print(f"{vid_name} is long, and GPU is not strong enough to handle. Splitting video into 1 hour batches...")
-            batches = split_video_by_hour(vid)
+            batches = split_video_into_batches(vid, video_split_length=processable_video_length_seconds)
 
         for batch in os.listdir(batches):
             video = os.path.join(batches, batch, vid_name)
@@ -182,7 +189,7 @@ def analyse_videos(config_path, videos: typing.List[typing.AnyStr], shuffle=1, p
             if len(os.listdir(os.path.join(batches, batch))) >= 9:
                 print(f"{batch} has already been analysed.")
                 continue
-            n_fish = analyze_video(config_path, video, debug, save_as_csv=save_as_csv, gputouse=gpu_to_use)
+            n_fish = analyze_video(config_path, video, debug, save_as_csv=save_as_csv, gputouse=gpu_to_use, shuffle=shuffle, n_fish=10)
             kill_and_reset()
             os.remove(video)
             displayedindividuals = [f'fish{i}' for i in range(1, n_fish + 1)]
