@@ -7,10 +7,10 @@ training_iterations = [100000, 150000]
 
 project_path = r"/home/bree_student/Downloads/dlc_model-student-2023-07-26"
 config_path = f"{project_path}/config.yaml"
-password_path = r"/home/bree_student/anaconda3/envs/dlc/cichlid-behavior-detection/password.yaml"
-with open(password_path, 'r') as f:
-    sudo_password = yaml.safe_load(f)['password']
-sudo_password += '\n'
+# password_path = r"/home/bree_student/anaconda3/envs/dlc/cichlid-behavior-detection/password.yaml"
+# with open(password_path, 'r') as f:
+#     sudo_password = yaml.safe_load(f)['password']
+# sudo_password += '\n'
 
 
 def kill_and_reset():
@@ -33,10 +33,11 @@ def kill_and_reset():
     # Step 3: Use subprocess to kill the identified process
 
     try:
-        command = ['sudo', 'kill', '-9', pid]
+        command = ['kill', '-9', pid]
+        # command = ['sudo', 'kill', '-9', pid]
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                    universal_newlines=True)
-        process.stdin.write(sudo_password)
+        # process.stdin.write(sudo_password)
         process.stdin.flush()
         print(f"Killed process with PID {pid}.")
     except subprocess.CalledProcessError as e:
