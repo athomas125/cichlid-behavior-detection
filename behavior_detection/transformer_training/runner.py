@@ -1,5 +1,5 @@
 import deeplabcut as dlc
-from behavior_detection.misc import analyse_videos
+from behavior_detection.misc.analyse_videos import analyse_videos
 from behavior_detection.misc.train_network import kill_and_reset
 
 def main():
@@ -15,7 +15,9 @@ def main():
     dlc.train_network(config_path, shuffle=1, gputouse=1, saveiters=10000, maxiters=100000)
     dlc.evaluate_network(config_path, gputouse=2)
     
-    video_path = ['/data/home/athomas314/test_video/MC_singlenuc23_1_Tk33_0212200003_vid_clip_36170_38240.mp4']
+    # video_path = ['/data/home/athomas314/test_video/MC_singlenuc23_1_Tk33_0212200003_vid_clip_36170_38240.mp4']
+    video_path = ['/data/home/athomas314/oneshot_videos/MC_singlenuc23_1_Tk33_0212200003_vid_debugging_clip.mp4',
+                  '/data/home/athomas314/oneshot_videos/MC_singlenuc34_3_Tk43_0303200001_vid_clip_1240_1360.mp4']
     for video in video_path:
             try:
                 analyse_videos(config_path=config_path, videos=[video], shuffle=1, n_fish=10)
