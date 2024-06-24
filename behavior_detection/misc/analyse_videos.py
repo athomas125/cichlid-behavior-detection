@@ -192,7 +192,7 @@ def analyse_videos(config_path, videos: typing.List[typing.AnyStr], shuffle=1, p
             n_fish = analyze_video(config_path, video, debug, save_as_csv=save_as_csv, gputouse=gpu_to_use, shuffle=shuffle, n_fish=n_fish)
             # kill_and_reset()
             os.remove(video)
-            displayedindividuals = [f'fish{i}' for i in range(1, n_fish + 1)]
+            displayedindividuals = [f'fish{i}' for i in range(1, n_fish + s1)]
             if plot_trajectories:
                 dlc.plot_trajectories(config_path, [vid], shuffle=shuffle,
                                       displayedindividuals=displayedindividuals)
