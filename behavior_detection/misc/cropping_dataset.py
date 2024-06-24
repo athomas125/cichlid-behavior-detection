@@ -4,8 +4,19 @@ import numpy as np
 from PIL import Image, ImageDraw
 from scipy.ndimage import affine_transform
 import argparse
+import cv2
+from tqdm import tqdm
 
 def get_rotation_matrix(angle):
+    """
+    Generates a 2D rotation matrix for the given angle.
+
+    Parameters:
+    angle (float): The rotation angle in degrees.
+
+    Returns:
+    np.ndarray: A 2x2 rotation matrix.
+    """
     angle = np.deg2rad(angle)
     cos_a = np.cos(angle)
     sin_a = np.sin(angle)
@@ -14,7 +25,23 @@ def get_rotation_matrix(angle):
         [sin_a, cos_a]
     ])
 
-def process_files(folder_path, angle, x1, y1, x2, y2, output_folder=None, debug_w_dots=False):
+def crop_datasets(folder_path, angle, x1, y1, x2, y2, output_folder=None, debug_w_dots=False):
+    """
+    Crops and rotates images, and updates corresponding CSV and HDF5 datasets.
+
+    Parameters:
+    folder_path (str): Path to the folder containing images and datasets.
+    angle (float): Rotation angle in degrees.
+    x1 (int): X-coordinate of the top-left corner of the crop box.
+    y1 (int): Y-coordinate of the top-left corner of the crop box.
+    x2 (int): X-coordinate of the bottom-right corner of the crop box.
+    y2 (int): Y-coordinate of the bottom-right corner of the crop box.
+    output_folder (str, optional): Path to the output folder for saving cropped images and updated datasets.
+    debug_w_dots (bool, optional): If True, draw red dots on the cropped images to mark the points.
+
+    Raises:
+    FileNotFoundError: If CSV or HDF5 file is not found in the specified folder.
+    """
     csv_path = None
     h5_path = None
 
@@ -34,13 +61,13 @@ def process_files(folder_path, angle, x1, y1, x2, y2, output_folder=None, debug_
         if file_name.endswith('.png'):
             file_path = os.path.join(folder_path, file_name)
             img_id = file_name.split('/')[-1]
-            csv_row = [x.split('/')[-1] == img_id for x in csv_data['scorer']].index(True)
+            csv_row = [x == img_id for x in csv_data['Unnamed: 2']].index(True)
             dot_list = []
             with Image.open(file_path) as img:
                 center = img.width/2, img.height/2
                 transform_matrix = get_rotation_matrix(-angle)
                 
-                for i in range(1, len(csv_data.columns), 2):
+                for i in range(3, len(csv_data.columns), 2):
                     x_val = float(csv_data.at[csv_row, csv_data.columns[i]])
                     y_val = float(csv_data.at[csv_row, csv_data.columns[i+1]])
                     if np.isnan(x_val) or np.isnan(y_val):
@@ -64,7 +91,7 @@ def process_files(folder_path, angle, x1, y1, x2, y2, output_folder=None, debug_
 
                 if debug_w_dots:
                     draw = ImageDraw.Draw(cropped_img)
-                    dot_size = 5
+                    dot_size = 3
                     dot_color = (255, 0, 0)
 
                     for dot in dot_list:
@@ -113,6 +140,49 @@ def process_files(folder_path, angle, x1, y1, x2, y2, output_folder=None, debug_
 
     print("Cropping and updates complete.")
 
+def crop_and_rotate_video(video_path, angle, x1, y1, x2, y2, output_name=None):
+    """
+    Crops and rotates a video.
+
+    Parameters:
+    video_path (str): Path to the input video file.
+    angle (float): Rotation angle in degrees.
+    x1 (int): X-coordinate of the top-left corner of the crop box.
+    y1 (int): Y-coordinate of the top-left corner of the crop box.
+    x2 (int): X-coordinate of the bottom-right corner of the crop box.
+    y2 (int): Y-coordinate of the bottom-right corner of the crop box.
+    output_name (str, optional): Name of the output video file. If None, appends '_rotcrop' to the original name.
+    """
+    cap = cv2.VideoCapture(video_path)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    output_width = x2 - x1
+    output_height = y2 -y1 
+
+    # Define the codec and create VideoWriter object
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    if output_name is None:
+        output_name = video_path.split('.')[0] + '_rotcrop.mp4'
+        
+    out = cv2.VideoWriter(output_name, fourcc, 20.0, (output_width, output_height))
+
+    for _ in tqdm(range(total_frames), desc="Rotating and cropping video"):
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        image_center = tuple(np.array(frame.shape[1::-1]) / 2)
+        rot_mat = cv2.getRotationMatrix2D(image_center, angle, 1.0)
+        result = cv2.warpAffine(frame, rot_mat, frame.shape[1::-1], flags=cv2.INTER_LINEAR)
+        result = result[y1:y2, x1:x2]
+        out.write(result)
+  
+    cap.release()
+    out.release()
+    cv2.destroyAllWindows()
+
 if __name__ == "__main__":
     # parser = argparse.ArgumentParser(description='Crop images and update CSV and HDF5 files.')
     # parser.add_argument('folder', type=str, help='The folder containing the files.')
@@ -125,8 +195,9 @@ if __name__ == "__main__":
     # parser.add_argument('--dot_debug', '-d', type=bool, help='Optional debugging mode to output images with dots on them to verify outputs')
 
     # args = parser.parse_args()
+    
+    # crop_datasets(args.folder, args.angle, x1, y1, x2, y2, args.output_folder, args.dot_debug)
 
-    # vertices = [(args.x1, args.y1), (args.x2, args.y1), (args.x2, args.y2), (args.x1, args.y2)]
-    # process_files(args.folder, vertices, args.angle, args.output_folder, args.dot_debug)
+    # crop_datasets('/data/home/athomas314/dlc_model-student-2023-07-26_cropped/labeled-data/MC_singlenuc23_1_Tk33_021220_0004_vid', 0, 87, 89, 1112, 914, '/data/home/athomas314/23_1_folder', True)
 
-    process_files("clip_5545_5585/", 262, 148, 1194, 842, 3.14, 'rotated', True)
+    crop_and_rotate_video('/data/home/athomas314/test_video/MC_singlenuc23_1_Tk33_0212200003_vid_clip_36170_38240.mp4', 0, 87, 89, 1112, 914)
