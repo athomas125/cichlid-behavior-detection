@@ -1,11 +1,21 @@
 """
 This version has been tested with DEEPLABCUT 2.3.10
+I DO NOT TAKE ANY CREDIT FOR THIS CODE - SEE THE LICENSE BELOW
 This code has been adapted from the DEEPLABCUT CreateVideo script in utils/make_labeled_video.py
 I created this so I have an easily accessible standalone version of the create video script that
 has the ability to utilize the Semi-supervised transformer individual id labels generated from 
 inference to label the given video.
 """
-
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 
 import argparse
 import os
