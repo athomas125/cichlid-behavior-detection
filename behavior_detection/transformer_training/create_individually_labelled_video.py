@@ -32,6 +32,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.animation import FFMpegWriter
 from matplotlib.collections import LineCollection
+from deeplabcut.modelzoo.utils import parse_available_supermodels
 from skimage.draw import disk, line_aa, set_color
 from skimage.util import img_as_ubyte
 from tqdm import trange
@@ -41,41 +42,6 @@ from deeplabcut.utils.video_processor import (
     VideoProcessorCV as vp,
 )  # used to CreateVideo
 from deeplabcut.utils.auxfun_videos import VideoWriter
-
-
-# TODO use this to not hardcode the tracks file name
-video_folders = ['/data/home/athomas314/test_video/']
-
-# TODO make this not hardcoded
-video = '/data/home/athomas314/test_video/MC_singlenuc23_1_Tk33_0212200003_vid_clip_36170_38240.mp4'
-
-transformer_id_tracks_file = '/data/home/athomas314/test_video/MC_singlenuc23_1_Tk33_0212200003_vid_clip_36170_38240DLC_dlcrnetms5_dlc_modelJul26shuffle1_100000_el_tr.h5'
-tracks_df = pd.read_hdf(transformer_id_tracks_file)
-
-animals = tracks_df.columns.get_level_values("individuals").unique().to_list()
-tracks_df = tracks_df.loc(axis=1)[:, animals]
-
-bpts = tracks_df.columns.get_level_values("bodyparts")
-all_bpts = bpts.values[::3]
-bplist = bpts.unique().to_list()
-nbodyparts = len(bplist)
-nindividuals = len(animals)
-
-
-output_path = transformer_id_tracks_file.replace(".h5", "_tf_labeled.mp4")
-codec = "mp4v" #default 
-sw = sh = ""
-fps = 30 # frame rate of the video
-display_cropped = False # video not cropped
-
-clip = vp(
-        fname=video,
-        sname=output_path,
-        codec=codec,
-        sw=sw,
-        sh=sh,
-        fps=fps,
-    )
 
 # Code below this point is a modified version of make_labeled_video.py from Deeplabcut v2.3.10
 
@@ -92,6 +58,22 @@ def get_segment_indices(bodyparts2connect, all_bpts):
                 )
             )
     return bpts2connect
+
+
+def _get_default_conf_to_alpha(
+    confidence_to_alpha: bool,
+    pcutoff: float,
+) -> Optional[Callable[[float], float]]:
+    """Creates the default confidence_to_alpha function"""
+    if not confidence_to_alpha:
+        return None
+
+    def default_confidence_to_alpha(x):
+        if pcutoff == 0:
+            return x
+        return np.clip((x - pcutoff) / (1 - pcutoff), 0, 1)
+
+    return default_confidence_to_alpha
 
 def CreateVideo(
     clip,
@@ -234,12 +216,12 @@ def CreateVideo(
                     avg_y = np.mean(df_y[individual_indices, index])
                     # center point
                     rr, cc = disk((avg_y, avg_x), dotsize, shape=(ny, nx))
-                    set_color(image, (rr, cc), color, 1)  # Same color for center point
+                    set_color(image, (rr, cc), colors[individual], 1)  # Same color for center point
                     # creating trail
                     center_points[individual].append((avg_y, avg_x))
                     for k in range(1, min(center_trailpoints, len(center_points[individual]))):
                         rr, cc = disk(center_points[individual][-k], dotsize, shape=(ny, nx))
-                        set_color(image, (rr, cc), color, 1)  # Same color for center trail
+                        set_color(image, (rr, cc), colors[individual], 1)  # Same color for center trail
 
 
             clip.save_frame(image)
@@ -406,9 +388,9 @@ def proc_video(
             if os.path.isfile(videooutname) and not overwrite:
                 print("Labeled video already created. Skipping...")
                 return
-
+            
             if all(individuals):
-                df = df.loc(axis=1)[:, individuals]
+                df = df.loc(axis=1)[:, df.columns.get_level_values("individuals").unique()[:]]
             cropping = metadata["data"]["cropping"]
             [x1, x2, y1, y2] = metadata["data"]["cropping_parameters"]
             labeled_bpts = [
@@ -421,7 +403,7 @@ def proc_video(
                 video,
                 filepath,
                 keypoints2show=labeled_bpts,
-                animals2show=individuals,
+                animals2show=df.columns.get_level_values("individuals").unique().to_list(),
                 bbox=(x1, x2, y1, y2),
                 codec=codec,
                 output_path=videooutname,
@@ -711,7 +693,7 @@ def create_labeled_video_w_transformer_option(
         center_trailpoints=center_trailpoints,
     )
     
-    if get_start_method() == "fork":
+    if get_start_method() == "fork" and len(Videos) > 1:
         with Pool(min(os.cpu_count(), len(Videos))) as pool:
             results = pool.map(func, Videos)
     else:
