@@ -40,9 +40,10 @@ def split_video_into_batches(video: str, exact=False, delete=False, video_split_
     if not os.path.exists(batches):
         os.mkdir(batches)
 
-    if len(os.listdir(batches)) > 0:
-        print("Batches already made.")
-        return batches
+    for dir in os.listdir(batches):
+        if video.split('/')[-1] in os.listdir(os.path.join(batches, os.listdir(batches)[0])):
+            print("Batches already made.")    
+            return batches
 
     vcodec = 'copy' if not exact else 'h264'
     ffmpeg_split.split_by_seconds(video, video_split_length, vcodec=vcodec)
@@ -192,7 +193,7 @@ def analyse_videos(config_path, videos: typing.List[typing.AnyStr], shuffle=1, p
             n_fish = analyze_video(config_path, video, debug, save_as_csv=save_as_csv, gputouse=gpu_to_use, shuffle=shuffle, n_fish=n_fish)
             # kill_and_reset()
             os.remove(video)
-            displayedindividuals = [f'fish{i}' for i in range(1, n_fish + s1)]
+            displayedindividuals = [f'fish{i}' for i in range(1, n_fish + 1)]
             if plot_trajectories:
                 dlc.plot_trajectories(config_path, [vid], shuffle=shuffle,
                                       displayedindividuals=displayedindividuals)
