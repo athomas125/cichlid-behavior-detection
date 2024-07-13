@@ -34,16 +34,36 @@ from deeplabcut.refine_training_dataset.stitch import TrackletStitcher
 from deeplabcut.pose_tracking_pytorch.tracking_utils.preprocessing import query_feature_by_coord_in_img_space
 
 from deeplabcut.utils import auxiliaryfunctions, auxfun_models
+from PIL import Image
+from torchvision.models import ViT_H_14_Weights
 
 
-def generate_train_triplets_from_pickle(path_to_track, n_triplets=1000):
+def generate_train_triplets_from_pickle_for_vid(path_to_track, n_triplets=1000):
     ts = TrackletStitcher.from_pickle(path_to_track, 3)
     triplets = ts.mine(n_triplets)
     assert len(triplets) == n_triplets
     return triplets
 
 
-def save_train_triplets(feature_fname, triplets, out_name):
+def ViT_H_14_Preprocess(frame, weights):
+    # Convert BGR to RGB
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    
+    # Convert to PIL Image
+    pil_image = Image.fromarray(rgb_frame)
+    
+    # Apply the ViT transforms
+    vit_input = weights.transforms()(pil_image)
+    
+    return vit_input
+
+def save_train_triplets_with_img(feature_fname, 
+                                 triplets,
+                                 out_name,
+                                 video_path,
+                                 image_preprocess_func,
+                                 image_preprocess_weights,
+                                 OUTPUT_COLOR_CHANNELS=3):
     ret_vecs = []
 
     feature_dict = shelve.open(feature_fname, protocol=pickle.DEFAULT_PROTOCOL)
@@ -51,8 +71,25 @@ def save_train_triplets(feature_fname, triplets, out_name):
     nframes = len(feature_dict.keys())
 
     zfill_width = int(np.ceil(np.log10(nframes)))
-
-    for triplet in triplets:
+    
+    
+    
+    final_dim_size = image_preprocess_weights.transforms().crop_size[0]**2 * OUTPUT_COLOR_CHANNELS #squaring crop size cause square crop
+    example = triplets[0][0]
+    example_frame = "frame" + str(example[1]).zfill(zfill_width)
+    kpt_feature_shape = query_feature_by_coord_in_img_space(
+        feature_dict, example_frame, example[0]
+    ).flatten().shape[0]
+    
+    
+    # Initialize a memory-mapped array to avoid OOM issues
+    ret_vecs_shape = (len(triplets), 3, kpt_feature_shape + final_dim_size)
+    ret_vecs = np.memmap(out_name, dtype='float32', mode='w+', shape=ret_vecs_shape)
+    
+    frame_map = {}
+    for i, triplet in enumerate(triplets):
+        if i > 1:
+            break
         anchor, pos, neg = triplet[0], triplet[1], triplet[2]
 
         anchor_coord, anchor_frame = anchor
@@ -72,31 +109,69 @@ def save_train_triplets(feature_fname, triplets, out_name):
 
             anchor_vec = query_feature_by_coord_in_img_space(
                 feature_dict, anchor_frame, anchor_coord
-            )
+            ).flatten()
             pos_vec = query_feature_by_coord_in_img_space(
                 feature_dict, pos_frame, pos_coord
-            )
+            ).flatten()
             neg_vec = query_feature_by_coord_in_img_space(
                 feature_dict, neg_frame, neg_coord
-            )
+            ).flatten()
 
-            ret_vecs.append([anchor_vec, pos_vec, neg_vec])
-
-    ret_vecs = np.array(ret_vecs)
-
-    with open(out_name, "wb") as f:
-        np.save(f, ret_vecs)
+            ret_vecs[i, :, :kpt_feature_shape] = np.array([anchor_vec, pos_vec, neg_vec])
+            triplet_ind = 0
+            for coord, frame in [anchor, pos, neg]:
+                frame_str = "frame" + str(frame).zfill(zfill_width)
+                if frame_str not in frame_map:
+                    frame_map[frame_str] = {}
+                
+                # using this so we have a hashable type (also using a mask here)
+                bounding_coords = (max(coord[coord[:,0] >= 0,0]), min(coord[coord[:,0] >= 0,0]), max(coord[coord[:,1] >= 0,1]), min(coord[coord[:,1] >= 0,1]))
+                if bounding_coords not in frame_map[frame_str]:
+                    frame_map[frame_str][bounding_coords] = []
+                frame_map[frame_str][bounding_coords].append((i, triplet_ind))
+                triplet_ind += 1
+                
+    cap = cv2.VideoCapture(video_path)
+    
+    width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    frame_ind = 0
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+            
+        frame_str = "frame" + str(frame_ind).zfill(zfill_width)
+        if frame_str in frame_map:
+            for key in frame_map[frame_str]:
+                frame_crop = frame[max(key[3]-50, 0):min(key[2]+50, height),max(key[1]-50, 0):min(key[0]+50, width),:]
+                vit_vec = image_preprocess_func(frame_crop, image_preprocess_weights).flatten()
+                for i, ind in frame_map[frame_str][key]:
+                    ret_vecs[i, ind, kpt_feature_shape:] = vit_vec
+                    ret_vecs.flush() 
+        frame_ind += 1
+            
+    # clear everything to disk
+    ret_vecs.flush() 
+    # close array
+    del ret_vecs
         
-        
-def create_train_using_pickle(feature_fname, path_to_pickle, out_name, n_triplets=1000):
-    triplets = generate_train_triplets_from_pickle(
+def create_train_using_pickle_and_vid(feature_fname, path_to_pickle, out_name, video_path, n_triplets=1000,
+                                      image_preprocess_func=None, image_preprocess_weights=None):
+    triplets = generate_train_triplets_from_pickle_for_vid(
         path_to_pickle, n_triplets=n_triplets
     )
-    save_train_triplets(feature_fname, triplets, out_name)
+    save_train_triplets_with_img(feature_fname, triplets, out_name, video_path,
+                                image_preprocess_func=image_preprocess_func, image_preprocess_weights=image_preprocess_weights,)
     
 
 def create_triplets_dataset(
-    videos, dlcscorer, track_method, n_triplets=1000, destfolder=None
+    videos,
+    dlcscorer,
+    track_method,
+    n_triplets=1000,
+    destfolder=None,
+    image_preprocess_func=None,
+    image_preprocess_weights=None,
 ):
     # 1) reference to video folder and get the proper bpt_feature file for feature table
     # 2) get either the path to gt or the path to track pickle
@@ -112,9 +187,10 @@ def create_triplets_dataset(
 
         method = trackingutils.TRACK_METHODS[track_method]
         track_file = os.path.join(destfolder, vname + dlcscorer + f"{method}.pickle")
-        out_fname = os.path.join(destfolder, vname + dlcscorer + "_triplet_vector.npy")
-        create_train_using_pickle(
-            feature_fname, track_file, out_fname, n_triplets=n_triplets
+        out_fname = os.path.join(destfolder, vname + dlcscorer + "_triplet_vector_with_image_debugging.npy")
+        create_train_using_pickle_and_vid(
+            feature_fname, track_file, out_fname, video, n_triplets=n_triplets,
+            image_preprocess_func=image_preprocess_func, image_preprocess_weights=image_preprocess_weights,
         )
 
 ####################################################
@@ -139,18 +215,9 @@ def create_tracking_dataset(
     modelprefix="",
     robust_nframes=False,
     n_triplets=1000,
+    image_preprocess_func=None,
+    image_preprocess_weights=None,
 ):
-    try:
-        from deeplabcut.pose_tracking_pytorch import create_triplets_dataset
-    except ModuleNotFoundError:
-        raise ModuleNotFoundError(
-            "Unsupervised identity learning requires PyTorch. Please run `pip install torch`."
-        )
-
-    from deeplabcut.pose_estimation_tensorflow.predict_multianimal import (
-        extract_bpt_feature_from_video,
-    )
-
     # allow_growth must be true here because tensorflow does not automatically free gpu memory and setting it as false occupies all gpu memory so that pytorch cannot kick in
     allow_growth = True
 
@@ -298,6 +365,8 @@ def create_tracking_dataset(
                 track_method,
                 n_triplets=n_triplets,
                 destfolder=destfolder,
+                image_preprocess_func=image_preprocess_func,
+                image_preprocess_weights=image_preprocess_weights,
             )
 
         else:
@@ -319,3 +388,30 @@ def create_tracking_dataset(
     else:
         print("No video(s) were found. Please check your paths and/or 'videotype'.")
         return DLCscorer
+    
+if __name__ == "__main__":
+    config = '/data/home/athomas314/dlc_model-student-2023-07-26/config.yaml'
+    videos = ['/data/home/athomas314/test_video/MC_singlenuc23_1_Tk33_0212200003_vid_clip_36170_38240_rotcrop.mp4']
+    track_method = 'ellipse'
+    videotype= ""
+    shuffle = 1
+    trainingsetindex = 0
+    modelprefix = ""
+    n_triplets = 1000
+    destfolder = None
+    func = ViT_H_14_Preprocess
+    weights = ViT_H_14_Weights.IMAGENET1K_SWAG_E2E_V1
+    
+    create_tracking_dataset(
+        config,
+        videos,
+        track_method,
+        videotype=videotype,
+        shuffle=shuffle,
+        trainingsetindex=trainingsetindex,
+        modelprefix=modelprefix,
+        n_triplets=n_triplets,
+        destfolder=destfolder,
+        image_preprocess_func=func,
+        image_preprocess_weights=weights,
+    )
