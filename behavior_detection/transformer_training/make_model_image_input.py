@@ -66,17 +66,17 @@ class build_dlc_transformer_w_feat_extractor(build_dlc_transformer):
     def __init__(self, cfg, in_chans, kpt_num, factory, feature_extractor, feature_extractor_in_shape, feature_extractor_out_dim):
         
         self.kpt_num = kpt_num
-        self.in_chans - in_chans
+        self.in_chans = in_chans
         self.non_image_data_chans = in_chans * kpt_num
         super().__init__(cfg, in_chans, kpt_num, factory)
         self.feature_extractor_in_shape = feature_extractor_in_shape
         self.feature_extractor = feature_extractor
-        self.final_fc = nn.Linear(super().base.num_features + torch.prod(feature_extractor_out_dim), 1024)
+        self.final_fc = nn.Linear(self.in_planes + feature_extractor_out_dim, 1024)
 
     def forward(self, x):
-        base_input = torch.reshape(x[:, :, :self.non_image_data_chans], (x.shape[0], x.shape[1], self.kpt_num, self.in_chans))
+        base_input = torch.reshape(x[:, :self.non_image_data_chans], (x.shape[0], self.kpt_num, self.in_chans))
         base_embeds = super().forward(base_input)
-        images = torch.reshape(x[:,:,self.non_image_data_chans:], (-1, *self.feature_extractor_in_shape))
+        images = torch.reshape(x[:,self.non_image_data_chans:], (-1, *self.feature_extractor_in_shape))
         image_embeddings = self.feature_extractor.forward(images)
         return self.final_fc(torch.cat([base_embeds, image_embeddings], dim=-1))
 
