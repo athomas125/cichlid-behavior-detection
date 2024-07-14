@@ -74,7 +74,7 @@ if __name__ == "__main__":
 
     feature_extractor = feature_extractor.to(device)
     with torch.no_grad():
-        image_path = '/data/home/athomas314/test_image.png'
+        image_path = 'data/test_image.png'
         image = Image.open(image_path)
         extractor_input = torch.unsqueeze(weights.transforms()(image), 0)
 
