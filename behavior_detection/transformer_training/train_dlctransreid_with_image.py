@@ -106,19 +106,23 @@ def train_tracking_transformer_image(
     feature_extractor=None,
     feature_extractor_in_dim=None,
     feature_extractor_out_dim=None,
+    npy_list_filenames = None,
 ):
     npy_list = []
-    videos = auxiliaryfunctions.get_list_of_videos(videos, videotype)
-    for video in videos:
-        videofolder = str(Path(video).parents[0])
-        if destfolder is None:
-            destfolder = videofolder
-        video_name = Path(video).stem
-        # video_name = '.'.join(video.split("/")[-1].split(".")[:-1])
-        files = glob.glob(os.path.join(destfolder, video_name + dlcscorer + "*image.npy"))
+    if npy_list_filenames is None:
+        videos = auxiliaryfunctions.get_list_of_videos(videos, videotype)
+        for video in videos:
+            videofolder = str(Path(video).parents[0])
+            if destfolder is None:
+                destfolder = videofolder
+            video_name = Path(video).stem
+            # video_name = '.'.join(video.split("/")[-1].split(".")[:-1])
+            files = glob.glob(os.path.join(destfolder, video_name + dlcscorer + "*image.npy"))
 
-        # assuming there is only one match
-        npy_list.append(files[0])
+            # assuming there is only one match
+            npy_list.append(files[0])
+    else:
+        npy_list = npy_list_filenames
 
     npy_shape = (n_triplets, 3, num_kpts*feature_dim + np.prod(feature_extractor_in_dim))
     train_list, test_list = split_train_test(npy_list, train_frac, npy_shape)
