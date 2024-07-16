@@ -24,6 +24,7 @@ from PIL import Image
 if __name__ == "__main__":
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"device is {device}")
     weights = ViT_H_14_Weights.IMAGENET1K_SWAG_E2E_V1
     pretrained_model = vit_h_14(weights=weights)
 
@@ -43,21 +44,25 @@ if __name__ == "__main__":
     NUM_KPTS = 9 # figure out how to make this not hardcoded
     FEATURE_DIM = 2048 # figure out if there is a good place to put this
     img_channels = 3 
-    n = 8
+    n = 1
     
     in_shape = torch.Size([img_channels, pretrained_model.image_size, pretrained_model.image_size])
     out_shape = pretrained_model.hidden_dim
     
     shuffle = 1
     video_path = ['/data/home/athomas314/test_video/MC_singlenuc23_1_Tk33_0212200003_vid_clip_36170_38240_rotcrop.mp4']
-    n_fish = 6
-    n_triplets=1000
+    n_fish = 5
     train_epochs = 100
     trainingsetindex=0
     modelprefix=""
     train_frac=0.8
     
-    training_data_filename =  '/data/home/athomas314/test_video/MC_singlenuc23_1_Tk33_0212200003_vid_clip_36170_38240_rotcropDLC_dlcrnetms5_dlc_modelJul26shuffle1_100000_triplet_vector_with_image.npy'
+    # training_data_filename =  '/storage/home/hcoda1/0/athomas314/scratch/MC_singlenuc23_1_Tk33_0212200003_vid_clip_36170_38240_rotcropDLC_dlcrnetms5_dlc_modelJul26shuffle1_100000_triplet_vector_with_image.npy'
+    # n_triplets=1000
+    training_data_filename = '/storage/home/hcoda1/0/athomas314/scratch/MC_singlenuc23_1_Tk33_0212200003_vid_clip_36170_38240_rotcropDLC_dlcrnetms5_dlc_modelJul26shuffle1_100000_triplet_vector_with_image_10k.npy'
+    n_triplets=10000
+    train_map_path = '/storage/home/hcoda1/0/athomas314/scratch/train_map.mmap'
+    test_map_path = '/storage/home/hcoda1/0/athomas314/scratch/test_map.mmap'
     
     if not os.path.isfile(training_data_filename):
     
@@ -81,7 +86,7 @@ if __name__ == "__main__":
         # if we provide a training data filename we don't need any of these
         DLCscorer = None
         config_path=None
-        snapshotfolder=None
+        snapshotfolder='/storage/home/hcoda1/0/athomas314/scratch/'
     
     train_tracking_transformer_image(config_path,
                                DLCscorer,
@@ -98,5 +103,7 @@ if __name__ == "__main__":
                                feature_extractor=feature_extractor,
                                feature_extractor_in_dim=in_shape,
                                feature_extractor_out_dim=out_shape,
-                               npy_list_filenames=training_data_filename
+                               npy_list_filenames=training_data_filename,
+                               train_map_path = train_map_path,
+                               test_map_path = test_map_path
                                )
