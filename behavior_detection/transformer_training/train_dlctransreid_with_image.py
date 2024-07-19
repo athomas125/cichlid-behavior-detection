@@ -41,64 +41,62 @@ def set_seed(seed):
     torch.backends.cudnn.benchmark = True
 
 
-def split_train_test(npy_list, train_frac, npy_shape, dtype='float32', train_map_path='train_data.mmap', test_map_path='test_data.mmap', seed=42, overwrite=False):
+def split_train_test(npy_list, train_frac, npy_shape, dtype='float32', train_map_path='train_data.mmap', test_map_path='test_data.mmap', seed=42, chunk_size=1024):
     if seed is not None:
         np.random.seed(seed)
         
-    train_list = []
-    test_list = []
-    print(f"creating train and test maps at {train_map_path}, {test_map_path}")
-    if not os.path.isfile(train_map_path) or not os.path.isfile(test_map_path) or overwrite:
-        # if file exists we create, otherwise we just return the file
-        print('getting indices')
-        for npy in npy_list:
-            # using memmap here because it can't fit in RAM, memmap leaves on disk
-            mmap = np.memmap(npy, dtype=dtype, mode='r', shape=npy_shape)
-            n_samples = mmap.shape[0]
-            indices = np.random.permutation(n_samples)
-            num_train = int(n_samples * train_frac)
-            
-            train_indices = indices[:num_train]
-            test_indices = indices[num_train:]
-            
-            train = mmap[train_indices]
-            test = mmap[test_indices]
-            
-            train_list.append(train)
-            test_list.append(test)
-        print('getting num samples')
-        # Create memory-mapped files for the concatenated train and test data
-        total_train_samples = sum(len(train) for train in train_list)
-        total_test_samples = sum(len(test) for test in test_list)
-
-        train_shape = (total_train_samples,) + npy_shape[1:]
-        test_shape = (total_test_samples,) + npy_shape[1:]
-        print('creating memmap')
-        train_mmap = np.memmap(train_map_path, dtype=dtype, mode='w+', shape=train_shape)
-        test_mmap = np.memmap(test_map_path, dtype=dtype, mode='w+', shape=test_shape)
-    else:
-        train_shape = (total_train_samples,) + npy_shape[1:]
-        test_shape = (total_test_samples,) + npy_shape[1:]
-        
-        train_mmap = np.memmap(train_map_path, dtype=dtype, mode='r', shape=train_shape)
-        test_mmap = np.memmap(test_map_path, dtype=dtype, mode='r', shape=test_shape)
-        return train_mmap, test_mmap
+    print(f"Creating train and test maps at {train_map_path}, {test_map_path}")
     
-    # Copy data to the memory-mapped files
-    start_idx = 0
-    for train in train_list:
-        end_idx = start_idx + len(train)
-        train_mmap[start_idx:end_idx] = train
-        start_idx = end_idx
+    total_train_samples = 0
+    total_test_samples = 0
+    
+    print('Calculating total samples for train and test datasets')
+    for npy in npy_list:
+        mmap = np.memmap(npy, dtype=dtype, mode='r', shape=npy_shape)
+        n_samples = mmap.shape[0]
+        num_train = int(n_samples * train_frac)
+        total_train_samples += num_train
+        total_test_samples += n_samples - num_train
 
-    start_idx = 0
-    for test in test_list:
-        end_idx = start_idx + len(test)
-        test_mmap[start_idx:end_idx] = test
-        start_idx = end_idx
+    train_shape = (total_train_samples,) + npy_shape[1:]
+    test_shape = (total_test_samples,) + npy_shape[1:]
+    
+    print('Creating memmap files')
+    train_mmap = np.memmap(train_map_path, dtype=dtype, mode='w+', shape=train_shape)
+    test_mmap = np.memmap(test_map_path, dtype=dtype, mode='w+', shape=test_shape)
+    
+    train_start_idx = 0
+    test_start_idx = 0
+    
+    print('Writing data to memmap files')
+    for npy in npy_list:
+        mmap = np.memmap(npy, dtype=dtype, mode='r', shape=npy_shape)
+        n_samples = mmap.shape[0]
+        indices = np.random.permutation(n_samples)
+        num_train = int(n_samples * train_frac)
+        
+        train_indices = indices[:num_train]
+        test_indices = indices[num_train:]
+        
+        # Write train data in chunks
+        for i in range(0, len(train_indices), chunk_size):
+            chunk_indices = train_indices[i:i+chunk_size]
+            train_end_idx = train_start_idx + len(chunk_indices)
+            train_mmap[train_start_idx:train_end_idx] = mmap[chunk_indices]
+            train_start_idx = train_end_idx
+            
+        # Write test data in chunks
+        for i in range(0, len(test_indices), chunk_size):
+            chunk_indices = test_indices[i:i+chunk_size]
+            test_end_idx = test_start_idx + len(chunk_indices)
+            test_mmap[test_start_idx:test_end_idx] = mmap[chunk_indices]
+            test_start_idx = test_end_idx
 
+    # Flush to ensure data is written to disk
+    train_mmap.flush()
+    test_mmap.flush()
+    
     return train_mmap, test_mmap
-
 
 def train_tracking_transformer_image(
     path_config_file,
@@ -119,7 +117,7 @@ def train_tracking_transformer_image(
     feature_extractor_out_dim=None,
     npy_list_filenames = None,
     train_map_path = 'train_data.mmap',
-    test_map_path = 'test_data.mmap',
+    test_map_path = 'test_data.mmap'
 ):
     npy_list = []
     if npy_list_filenames is None:

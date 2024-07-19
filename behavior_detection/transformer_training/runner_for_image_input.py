@@ -44,7 +44,7 @@ if __name__ == "__main__":
     NUM_KPTS = 9 # figure out how to make this not hardcoded
     FEATURE_DIM = 2048 # figure out if there is a good place to put this
     img_channels = 3 
-    n = 1
+    n = 36
     
     in_shape = torch.Size([img_channels, pretrained_model.image_size, pretrained_model.image_size])
     out_shape = pretrained_model.hidden_dim
