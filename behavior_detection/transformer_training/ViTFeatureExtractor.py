@@ -1,9 +1,11 @@
 import torch
 import torch.nn as nn
-from torchvision import transforms
 from torchvision.models import vit_h_14, ViT_H_14_Weights
 from torchvision.models.vision_transformer import VisionTransformer
-class ViTFeatureExtractor(VisionTransformer):            
+class ViTFeatureExtractor(VisionTransformer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+                  
     def forward(self, x: torch.Tensor):
         # Reshape and permute the input tensor
         x = self._process_input(x)

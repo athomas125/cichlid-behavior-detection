@@ -23,7 +23,8 @@ import glob
 from pathlib import Path
 from deeplabcut.pose_tracking_pytorch.config import cfg
 from deeplabcut.pose_tracking_pytorch.datasets import make_dlc_dataloader
-from behavior_detection.transformer_training.make_model_image_input import make_dlc_model
+from behavior_detection.transformer_training.make_model_dlc_and_image import make_dlc_model
+from behavior_detection.transformer_training.make_model_dlc_and_image import make_dlc_model_just_image
 from deeplabcut.pose_tracking_pytorch.solver import make_easy_optimizer
 from deeplabcut.pose_tracking_pytorch.solver.scheduler_factory import create_scheduler
 from deeplabcut.pose_tracking_pytorch.loss import easy_triplet_loss
@@ -113,6 +114,7 @@ def train_tracking_transformer_image(
     feature_dim=2048,
     num_kpts=9,
     feature_extractor=None,
+    just_image = False,
     feature_extractor_in_dim=None,
     feature_extractor_out_dim=None,
     npy_list_filenames = None,
@@ -149,14 +151,23 @@ def train_tracking_transformer_image(
     train_loader, val_loader = make_dlc_dataloader(train_list, test_list, batch_size)
     print("got dataloaders")
     
-    # make my own model factory
-    model = make_dlc_model(cfg, 
-                           feature_dim,
-                           num_kpts,
-                           feature_extractor,
-                           feature_extractor_in_dim,
-                           feature_extractor_out_dim)
-    print("got model")
+    if just_image:
+        model = make_dlc_model_just_image(cfg, 
+                                        feature_dim,
+                                        num_kpts,
+                                        feature_extractor,
+                                        feature_extractor_in_dim,
+                                        feature_extractor_out_dim)
+        print("got dlc model just images")
+    else:
+        # make my own model factory
+        model = make_dlc_model(cfg, 
+                            feature_dim,
+                            num_kpts,
+                            feature_extractor,
+                            feature_extractor_in_dim,
+                            feature_extractor_out_dim)
+        print("got dlc model that includes features")
     
     # make my own loss factory
     triplet_loss = easy_triplet_loss()

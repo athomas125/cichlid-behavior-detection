@@ -10,7 +10,7 @@
 #SBATCH --mail-user=athomas314@gatech.edu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --gres=gpu:H100:8
+#SBATCH --gres=gpu:H100:2
 #SBATCH -qinferno
 #SBATCH --output=Report_%A-%a.out
 #SBATCH --time=24:00:00
@@ -35,6 +35,11 @@ unset __conda_setup
 
 # Activate the conda environment
 conda activate /storage/home/hcoda1/0/athomas314/scratch/DEEPLABCUT
+
+export JUST_IMAGE=1
+export BATCHSIZE=9
+export EPOCHS=60
+export MODEL='VIT_H_14'
 
 # Call the python script with the specified folder
 python /storage/home/hcoda1/0/athomas314/ondemand/cichlid-behavior-detection/behavior_detection/transformer_training/runner_for_image_input.py 
