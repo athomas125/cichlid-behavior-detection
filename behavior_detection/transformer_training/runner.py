@@ -36,8 +36,8 @@ def main():
         augs,
     )
 
-    dlc.train_network(config_path, shuffle=shuffle, gputouse=1, saveiters=10000, maxiters=100000)
-    dlc.evaluate_network(config_path, gputouse=2)
+    dlc.train_network(config_path, shuffle=shuffle, gputouse=0, saveiters=10000, maxiters=100000)
+    dlc.evaluate_network(config_path, gputouse=0)
     
     video_path = ['/data/home/athomas314/test_video/MC_singlenuc23_1_Tk33_0212200003_vid_clip_36170_38240_rotcrop.mp4']
     # # video_path = ['/data/home/athomas314/oneshot_videos/MC_singlenuc23_1_Tk33_0212200003_vid_debugging_clip.mp4',
